@@ -1,718 +1,1117 @@
-'use client'
+"use client";
 
-import { useState, useEffect } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
-import { db } from './firebase'
-import { collection, addDoc, getDocs, orderBy, query } from 'firebase/firestore'
+import { useState, useEffect, useRef } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import {
+  FiSun,
+  FiMoon,
+  FiMenu,
+  FiX,
+  FiArrowRight,
+  FiUser,
+  FiBriefcase,
+  FiAward,
+  FiMail,
+  FiPhone,
+  FiMapPin,
+  FiGithub,
+  FiLinkedin,
+  FiTwitter,
+  FiStar,
+  FiMessageSquare,
+} from "react-icons/fi";
+import { db } from "./firebase"; // Adjust path based on your project structure
+import {
+  collection,
+  addDoc,
+  getDocs,
+  serverTimestamp,
+} from "firebase/firestore";
 
 export default function Home() {
-  const [darkMode, setDarkMode] = useState(false)
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
-  const [selectedPortfolio, setSelectedPortfolio] = useState(null)
-  const [comments, setComments] = useState([])
-  const [newComment, setNewComment] = useState('')
-  const [commenterName, setCommenterName] = useState('')
-  const [rating, setRating] = useState(0)
-  const [averageRating, setAverageRating] = useState(0)
-  const [totalVoters, setTotalVoters] = useState(0)
-  const [chatInput, setChatInput] = useState('')
-  const [chatResponse, setChatResponse] = useState('')
+  const [darkMode, setDarkMode] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [activeSection, setActiveSection] = useState("home");
+  const [selectedPortfolio, setSelectedPortfolio] = useState(null);
+  const [cursorPosition, setCursorPosition] = useState({ x: 0, y: 0 });
+  const [comments, setComments] = useState([]);
+  const [newComment, setNewComment] = useState("");
+  const [commenterName, setCommenterName] = useState("");
+  const [ratings, setRatings] = useState([]);
+  const [newRating, setNewRating] = useState(0);
+  const [ratingHover, setRatingHover] = useState(0);
+  const [chatInput, setChatInput] = useState("");
+  const [chatResponse, setChatResponse] = useState("");
+  const cursorRef = useRef(null);
 
-  // Theme handling
+  // Custom cursor effect
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const savedMode = localStorage.getItem('darkMode')
-      if (savedMode) {
-        setDarkMode(savedMode === 'true')
-      } else if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
-        setDarkMode(true)
-      }
+    const moveCursor = (e) => {
+      setCursorPosition({ x: e.clientX, y: e.clientY });
+    };
+    window.addEventListener("mousemove", moveCursor);
+    return () => window.removeEventListener("mousemove", moveCursor);
+  }, []);
+
+  // Dark mode handling
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const savedMode = localStorage.getItem("darkMode");
+      const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+      const initialDarkMode = savedMode ? savedMode === "true" : prefersDark;
+      setDarkMode(initialDarkMode);
+      console.log("Initial darkMode:", initialDarkMode); // Debug
     }
-  }, [])
+  }, []);
 
   useEffect(() => {
-    if (darkMode) {
-      document.documentElement.classList.add('dark')
-    } else {
-      document.documentElement.classList.remove('dark')
+    if (typeof window !== "undefined") {
+      document.documentElement.classList.toggle("dark", darkMode);
+      localStorage.setItem("darkMode", darkMode);
+      console.log("Applying darkMode:", darkMode); // Debug
     }
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('darkMode', darkMode)
-    }
-  }, [darkMode])
-
-  const toggleTheme = () => {
-    setDarkMode(!darkMode)
-  }
+  }, [darkMode]);
 
   // Fetch comments and ratings from Firestore
   useEffect(() => {
-    const fetchFeedback = async () => {
+    const fetchComments = async () => {
       try {
-        // Fetch comments
-        const commentsQuery = query(collection(db, 'comments'), orderBy('timestamp', 'desc'))
-        const commentsSnapshot = await getDocs(commentsQuery)
-        const commentsData = commentsSnapshot.docs.map(doc => ({
+        const querySnapshot = await getDocs(collection(db, "comments"));
+        const commentsData = querySnapshot.docs.map((doc) => ({
           id: doc.id,
-          ...doc.data()
-        }))
-        setComments(commentsData)
-
-        // Fetch ratings
-        const ratingsQuery = query(collection(db, 'ratings'))
-        const ratingsSnapshot = await getDocs(ratingsQuery)
-        const ratingsData = ratingsSnapshot.docs.map(doc => doc.data().rating)
-        if (ratingsData.length > 0) {
-          const avg = ratingsData.reduce((sum, r) => sum + r, 0) / ratingsData.length
-          setAverageRating(avg.toFixed(1))
-          setTotalVoters(ratingsData.length)
-        }
+          ...doc.data(),
+        }));
+        setComments(commentsData.sort((a, b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0)));
       } catch (error) {
-        console.error('Error fetching feedback:', error)
+        console.error("Error fetching comments:", error);
       }
-    }
-    fetchFeedback()
-  }, [])
+    };
+
+    const fetchRatings = async () => {
+      try {
+        const querySnapshot = await getDocs(collection(db, "ratings"));
+        const ratingsData = querySnapshot.docs.map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+        }));
+        setRatings(ratingsData);
+      } catch (error) {
+        console.error("Error fetching ratings:", error);
+      }
+    };
+
+    fetchComments();
+    fetchRatings();
+  }, []);
 
   // Handle comment submission
   const handleCommentSubmit = async (e) => {
-    e.preventDefault()
-    if (!commenterName.trim() || !newComment.trim()) return
+    e.preventDefault();
+    if (!commenterName.trim() || !newComment.trim()) return;
 
     try {
-      await addDoc(collection(db, 'comments'), {
+      await addDoc(collection(db, "comments"), {
         name: commenterName,
         comment: newComment,
-        timestamp: new Date()
-      })
+        timestamp: serverTimestamp(),
+      });
       setComments([
         {
           name: commenterName,
           comment: newComment,
-          timestamp: new Date()
+          timestamp: new Date(),
         },
-        ...comments
-      ])
-      setNewComment('')
-      setCommenterName('')
+        ...comments,
+      ]);
+      setNewComment("");
+      setCommenterName("");
     } catch (error) {
-      console.error('Error adding comment:', error)
+      console.error("Error adding comment:", error);
     }
-  }
+  };
 
   // Handle rating submission
   const handleRatingSubmit = async () => {
-    if (rating === 0) return
+    if (newRating < 1 || newRating > 5) return;
 
     try {
-      await addDoc(collection(db, 'ratings'), {
-        rating,
-        timestamp: new Date()
-      })
-      const ratingsQuery = query(collection(db, 'ratings'))
-      const ratingsSnapshot = await getDocs(ratingsQuery)
-      const ratingsData = ratingsSnapshot.docs.map(doc => doc.data().rating)
-      const avg = ratingsData.reduce((sum, r) => sum + r, 0) / ratingsData.length
-      setAverageRating(avg.toFixed(1))
-      setTotalVoters(ratingsData.length)
-      setRating(0)
+      await addDoc(collection(db, "ratings"), {
+        rating: newRating,
+        timestamp: serverTimestamp(),
+      });
+      setRatings([...ratings, { rating: newRating, timestamp: new Date() }]);
+      setNewRating(0);
     } catch (error) {
-      console.error('Error adding rating:', error)
+      console.error("Error adding rating:", error);
     }
-  }
+  };
 
-  // Handle chat submission
+  // Handle chatbot submission
   const handleChatSubmit = async (e) => {
-    e.preventDefault()
-    if (!chatInput.trim()) return
+    e.preventDefault();
+    if (!chatInput.trim()) return;
 
     try {
-      const response = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message: chatInput }),
-      })
-      const data = await response.json()
-      setChatResponse(data.response)
-      setChatInput('')
+      });
+      const data = await response.json();
+      if (data.error) {
+        setChatResponse("Sorry, something went wrong with the AI. Try again!");
+      } else {
+        setChatResponse(data.response);
+      }
+      setChatInput("");
     } catch (error) {
-      console.error('Error with AI:', error)
-      setChatResponse('Sorry, something went wrong with the AI. Try again!')
+      console.error("Error with AI:", error);
+      setChatResponse("Failed to connect to the AI. Please try again later.");
     }
-  }
+  };
 
-  const portfolioItems = [
+  // Calculate average rating
+  const averageRating =
+    ratings.length > 0
+      ? (ratings.reduce((sum, r) => sum + r.rating, 0) / ratings.length).toFixed(1)
+      : "0.0";
+
+  const toggleTheme = () => {
+    setDarkMode((prev) => {
+      const newMode = !prev;
+      console.log("Toggling to darkMode:", newMode); // Debug
+      return newMode;
+    });
+  };
+
+  const toggleMobileMenu = () => {
+    setMobileMenuOpen(!mobileMenuOpen);
+  };
+
+  const navItems = [
+    { id: "home", label: "Home", icon: <FiUser /> },
+    { id: "about", label: "About", icon: <FiBriefcase /> },
+    { id: "portfolio", label: "Work", icon: <FiAward /> },
+    { id: "contact", label: "Contact", icon: <FiMail /> },
+    { id: "feedback", label: "Feedback", icon: <FiStar /> },
+    { id: "chatbot", label: "Chatbot", icon: <FiMessageSquare /> },
+  ];
+
+  const portfolios = [
     {
       id: 1,
-      title: 'E-commerce Website',
-      period: 'Jan 2022 - Present',
-      description: 'Developed a full-stack e-commerce platform with React, Next.js, and Node.js. Implemented payment gateway, product management, and user authentication.',
-      details: 'Led a team of 3 developers to build a scalable e-commerce solution. Integrated Stripe for payments, implemented SEO best practices, and achieved 40% faster page loads through optimization.'
+      title: "E-commerce Platform",
+      company: "Shopify Partner",
+      period: "2023 - Present",
+      description:
+        "Redesigned UI/UX for major e-commerce platform with 30% increase in conversion rates.",
+      details: [
+        "User research and persona development",
+        "Wireframing and prototyping",
+        "Responsive design implementation",
+        "Usability testing and iteration",
+      ],
+      tags: ["UI Design", "UX Research", "Figma", "User Testing"],
+      image: "/ecommerce.jpg",
     },
     {
       id: 2,
-      title: 'Mobile Banking App',
-      period: 'Jun 2020 - Dec 2021',
-      description: 'Created a cross-platform mobile banking application with React Native and Firebase.',
-      details: 'Developed secure authentication flow, transaction history, and bill payment features. The app serves over 10,000 active users with 99.9% uptime.'
+      title: "Banking App",
+      company: "FinTech Startup",
+      period: "2021 - 2022",
+      description: "Mobile banking app focused on simplicity for first-time users.",
+      details: [
+        "User flows and information architecture",
+        "Custom icon set and illustrations",
+        "Design system development",
+        "Developer collaboration",
+      ],
+      tags: ["Mobile Design", "Design Systems", "Illustration", "Prototyping"],
+      image: "/banking.jpg",
     },
     {
       id: 3,
-      title: 'Portfolio Website',
-      period: 'Mar 2019 - May 2020',
-      description: 'Designed and developed a portfolio website for a local artist.',
-      details: 'Created custom animations and interactive gallery. Implemented CMS integration allowing client to update content without developer assistance.'
-    }
-  ]
+      title: "Healthcare Dashboard",
+      company: "HealthTech Corp",
+      period: "2019 - 2021",
+      description:
+        "Analytics dashboard for healthcare providers tracking patient outcomes.",
+      details: [
+        "Data visualization design",
+        "Medical professional interviews",
+        "Workflow optimization",
+        "ADA compliance",
+      ],
+      tags: ["Data Viz", "Dashboard Design", "Accessibility", "B2B"],
+      image: "/healthcare.jpg",
+    },
+  ];
 
-  const navItems = [
-    { name: 'Home', href: '#home' },
-    { name: 'About', href: '#about' },
-    { name: 'Portfolio', href: '#portfolio' },
-    { name: 'Feedback', href: '#feedback' },
-    { name: 'Contact', href: '#contact' },
-    { name: 'Chatbot', href: '#chatbot' }
-  ]
+  const scrollToSection = (sectionId) => {
+    const element = document.getElementById(sectionId);
+    if (element) {
+      element.scrollIntoView({ behavior: "smooth" });
+      setActiveSection(sectionId);
+      setMobileMenuOpen(false);
+    }
+  };
+
+  const openPortfolioDetail = (portfolio) => {
+    setSelectedPortfolio(portfolio);
+    document.body.style.overflow = "hidden";
+  };
+
+  const closePortfolioDetail = () => {
+    setSelectedPortfolio(null);
+    document.body.style.overflow = "auto";
+  };
+
+  const socialLinks = [
+    { icon: <FiGithub />, url: "https://github.com" },
+    { icon: <FiLinkedin />, url: "https://linkedin.com" },
+    { icon: <FiTwitter />, url: "https://twitter.com" },
+  ];
 
   return (
-    <div className={`min-h-screen transition-colors duration-300 ${darkMode ? 'dark bg-gray-900 text-gray-100' : 'bg-pink-50 text-gray-800'}`}>
-      {/* Theme Toggle */}
-      <button
-        onClick={toggleTheme}
-        className={`fixed bottom-4 left-4 z-50 p-3 rounded-full shadow-lg ${darkMode ? 'bg-pink-200 text-gray-900' : 'bg-pink-600 text-white'}`}
-        aria-label="Toggle dark mode"
-      >
-        {darkMode ? (
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
-          </svg>
-        ) : (
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
-          </svg>
-        )}
-      </button>
+    <div
+      className={`min-h-screen transition-colors duration-300 ${
+        darkMode ? "dark bg-gray-900 text-gray-100" : "bg-[#fef6f5] text-gray-800"
+      }`}
+      style={
+        darkMode
+          ? { backgroundColor: "#111827" }
+          : { backgroundColor: "#fef6f5" }
+      }
+    >
+     
+
+      {/* Floating Social Links */}
+      <div className="fixed left-6 bottom-24 z-40 hidden md:flex flex-col gap-4">
+        {socialLinks.map((link, index) => (
+          <motion.a
+            key={index}
+            href={link.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            whileHover={{ y: -4 }}
+            className={`p-2 rounded-full ${
+              darkMode ? "bg-gray-800 text-pink-300" : "bg-pink-100 text-pink-600"
+            } shadow-md`}
+          >
+            {link.icon}
+          </motion.a>
+        ))}
+      </div>
 
       {/* Navbar */}
-      <nav className={`sticky top-0 z-40 ${darkMode ? 'bg-gray-800' : 'bg-pink-100'} shadow-md`}>
-        <div className="container mx-auto px-4 py-3">
-          <div className="flex justify-between items-center">
-            <a href="#" className="text-2xl font-bold">
-              <span className={`${darkMode ? 'text-pink-300' : 'text-pink-600'}`}>My</span>CV
-            </a>
-
-            {/* Desktop Nav */}
-            <div className="hidden md:flex space-x-6">
-              {navItems.map((item) => (
-                <a
-                  key={item.name}
-                  href={item.href}
-                  className={`px-3 py-2 rounded-md text-sm font-medium ${darkMode ? 'hover:bg-gray-700 hover:text-pink-300' : 'hover:bg-pink-200 hover:text-pink-700'}`}
-                >
-                  {item.name}
-                </a>
-              ))}
-            </div>
-
-            {/* Mobile Nav Button */}
-            <button
-              className="md:hidden focus:outline-none"
-              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+      <motion.nav
+        initial={{ y: -20, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        transition={{ duration: 0.5 }}
+        className={`fixed w-full z-40 ${
+          darkMode
+            ? "bg-gray-800/90 backdrop-blur-md"
+            : "bg-[#ffd6d0]/90 backdrop-blur-md"
+        } shadow-sm`}
+      >
+        <div className="container mx-auto px-6 py-4 flex justify-between items-center">
+          <motion.div
+            whileHover={{ scale: 1.05 }}
+            className="text-xl font-bold cursor-pointer"
+            onClick={() => scrollToSection("home")}
+          >
+            <span
+              className={`bg-gradient-to-r ${
+                darkMode
+                  ? "from-pink-400 to-purple-500"
+                  : "from-pink-600 to-purple-600"
+              } bg-clip-text text-transparent`}
             >
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                {mobileMenuOpen ? (
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-                ) : (
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16" />
-                )}
-              </svg>
-            </button>
+              Ajeng Reyra Prameswari
+            </span>
+          </motion.div>
+
+          {/* Desktop Nav */}
+          <div className="hidden md:flex items-center gap-1">
+            {navItems.map((item) => (
+              <motion.button
+                key={item.id}
+                whileHover={{ y: -2 }}
+                onClick={() => scrollToSection(item.id)}
+                className={`px-4 py-2 rounded-lg flex items-center gap-2 text-sm font-medium transition-all ${
+                  activeSection === item.id
+                    ? darkMode
+                      ? "bg-pink-600/20 text-pink-300"
+                      : "bg-pink-500/20 text-pink-600"
+                    : darkMode
+                    ? "text-gray-300 hover:bg-gray-700/50"
+                    : "text-gray-700 hover:bg-pink-200/50"
+                }`}
+              >
+                <span className="text-sm">{item.icon}</span>
+                {item.label}
+              </motion.button>
+            ))}
           </div>
+
+          {/* Mobile Nav Toggle */}
+          <button
+            className="md:hidden p-2 rounded-lg focus:outline-none"
+            onClick={toggleMobileMenu}
+            aria-label="Toggle menu"
+          >
+            {mobileMenuOpen ? (
+              <FiX
+                size={24}
+                className={darkMode ? "text-pink-300" : "text-pink-600"}
+              />
+            ) : (
+              <FiMenu
+                size={24}
+                className={darkMode ? "text-pink-300" : "text-pink-600"}
+              />
+            )}
+          </button>
         </div>
 
-        {/* Mobile Nav */}
+        {/* Mobile Nav Menu */}
         <AnimatePresence>
           {mobileMenuOpen && (
             <motion.div
               initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
+              animate={{ opacity: 1, height: "auto" }}
               exit={{ opacity: 0, height: 0 }}
-              transition={{ duration: 0.3 }}
-              className={`md:hidden ${darkMode ? 'bg-gray-800' : 'bg-pink-100'}`}
+              className="md:hidden overflow-hidden"
             >
-              <div className="px-2 pt-2 pb-3 space-y-1 sm:px-3">
+              <div
+                className={`px-4 pb-4 ${
+                  darkMode ? "bg-gray-800" : "bg-[#ffd6d0]"
+                }`}
+              >
                 {navItems.map((item) => (
-                  <a
-                    key={item.name}
-                    href={item.href}
-                    className={`block px-3 py-2 rounded-md text-base font-medium ${darkMode ? 'hover:bg-gray-700 hover:text-pink-300' : 'hover:bg-pink-200 hover:text-pink-700'}`}
-                    onClick={() => setMobileMenuOpen(false)}
+                  <motion.button
+                    key={item.id}
+                    initial={{ x: -20, opacity: 0 }}
+                    animate={{ x: 0, opacity: 1 }}
+                    transition={{ delay: 0.1 * navItems.indexOf(item) }}
+                    onClick={() => scrollToSection(item.id)}
+                    className={`w-full text-left px-4 py-3 rounded-lg flex items-center gap-3 text-base font-medium ${
+                      activeSection === item.id
+                        ? darkMode
+                          ? "bg-pink-600 text-white"
+                          : "bg-pink-500 text-white"
+                        : darkMode
+                        ? "text-gray-300 hover:bg-gray-700"
+                        : "text-gray-700 hover:bg-pink-200"
+                    }`}
                   >
-                    {item.name}
-                  </a>
+                    {item.icon}
+                    {item.label}
+                  </motion.button>
                 ))}
               </div>
             </motion.div>
           )}
         </AnimatePresence>
-      </nav>
+      </motion.nav>
 
-      <main className="container mx-auto px-4 py-8">
-        {/* Hero Section */}
-        <section id="home" className="py-12 md:py-20">
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.8 }}
-            className="flex flex-col md:flex-row items-center"
-          >
-            <div className="md:w-1/2 mb-8 md:mb-0">
-              <h1 className="text-4xl md:text-5xl font-bold mb-4">
-                Hi, I'm <span className={`${darkMode ? 'text-pink-300' : 'text-pink-600'}`}>Jane Doe</span>
-              </h1>
-              <h2 className="text-2xl md:text-3xl font-semibold mb-6">
-                Full Stack Developer
-              </h2>
-              <p className={`text-lg mb-8 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
-                I build exceptional digital experiences with modern technologies.
-              </p>
-              <div className="flex space-x-4">
-                <a
-                  href="#contact"
-                  className={`px-6 py-3 rounded-lg font-medium ${darkMode ? 'bg-pink-600 hover:bg-pink-700' : 'bg-pink-500 hover:bg-pink-600'} text-white`}
-                >
-                  Contact Me
-                </a>
-                <a
-                  href="#portfolio"
-                  className={`px-6 py-3 rounded-lg font-medium ${darkMode ? 'bg-gray-700 hover:bg-gray-600' : 'bg-pink-100 hover:bg-pink-200'}`}
-                >
-                  View Work
-                </a>
-              </div>
-            </div>
-            <div className="md:w-1/2 flex justify-center">
-              <motion.div
-                initial={{ scale: 0.9 }}
-                animate={{ scale: 1 }}
-                transition={{ duration: 0.5, delay: 0.2 }}
-                className="relative"
-              >
-                <div className={`w-64 h-64 md:w-80 md:h-80 rounded-full ${darkMode ? 'bg-gray-700' : 'bg-pink-200'} overflow-hidden border-4 ${darkMode ? 'border-pink-400' : 'border-pink-500'}`}>
-                  <div className="w-full h-full bg-gray-300 flex items-center justify-center">
-                    <svg className="w-32 h-32 text-gray-500" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
-                      <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd"></path>
-                    </svg>
+      {/* Theme Toggle */}
+      <motion.button
+        onClick={toggleTheme}
+        whileHover={{ scale: 1.1 }}
+        whileTap={{ scale: 0.9 }}
+        className={`fixed bottom-6 left-6 z-40 p-3 rounded-full shadow-lg ${
+          darkMode ? "bg-gray-700 text-yellow-300" : "bg-pink-100 text-pink-600"
+        }`}
+        aria-label="Toggle dark mode"
+      >
+        {darkMode ? <FiSun size={20} /> : <FiMoon size={20} />}
+      </motion.button>
+
+      {/* Main Content */}
+      <main className="container mx-auto px-6 pt-28 pb-16">
+        {/* Home Section */}
+        <section
+  id="home"
+  className="min-h-screen flex flex-col md:flex-row items-center justify-center gap-12 py-12"
+>
+  <motion.div
+    initial={{ opacity: 0, x: -50 }}
+    animate={{ opacity: 1, x: 0 }}
+    transition={{ duration: 0.8 }}
+    className="md:w-1/2 flex justify-center"
+  >
+    <div
+      className={`relative w-64 h-64 md:w-96 md:h-96 rounded-2xl overflow-hidden border-4 ${
+        darkMode ? "border-pink-500/30" : "border-pink-400/30"
+      } shadow-2xl`}
+    >
+      <img
+        src="/profile3.jpeg"
+        alt="Profile"
+        className="w-full h-full object-cover"
+      />
+      <div
+        className={`absolute inset-0 bg-gradient-to-t ${
+          darkMode
+            ? "from-gray-900/80 to-transparent"
+            : "from-white/80 to-transparent"
+        } opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-6`}
+      >
+        <motion.div
+          initial={{ y: 20, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          transition={{ delay: 0.2 }}
+          className={`text-lg font-medium ${
+            darkMode ? "text-pink-300" : "text-pink-700"
+          }`}
+        >
+          UI/UX Designer & Developer
+                    </motion.div>
                   </div>
-                </div>
-                <motion.div
-                  animate={{
-                    rotate: [0, 10, -10, 0],
-                  }}
-                  transition={{
-                    duration: 4,
-                    repeat: Infinity,
-                    repeatType: "reverse",
-                  }}
-                  className={`absolute -bottom-4 -left-4 w-16 h-16 rounded-full ${darkMode ? 'bg-pink-600' : 'bg-pink-400'} opacity-80`}
-                ></motion.div>
-                <motion.div
-                  animate={{
-                    rotate: [0, -15, 15, 0],
-                  }}
-                  transition={{
-                    duration: 5,
-                    repeat: Infinity,
-                    repeatType: "reverse",
-                  }}
-                  className={`absolute -top-4 -right-4 w-20 h-20 rounded-full ${darkMode ? 'bg-pink-500' : 'bg-pink-300'} opacity-80`}
-                ></motion.div>
-              </motion.div>
+                
+            </div>
+          </motion.div>
+
+          <motion.div
+            initial={{ opacity: 0, x: 50 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ duration: 0.8, delay: 0.2 }}
+            className="md:w-1/2 text-center md:text-left"
+          >
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.4 }}
+              className={`text-sm font-mono mb-4 ${
+                darkMode ? "text-pink-400" : "text-pink-600"
+              }`}
+            >
+              Hello, I'm
+            </motion.div>
+            <h1
+              className={`text-5xl md:text-6xl font-bold mb-6 bg-gradient-to-r ${
+                darkMode
+                  ? "from-pink-400 to-purple-400"
+                  : "from-pink-600 to-purple-600"
+              } bg-clip-text text-transparent`}
+            >
+              Ajeng Reyra Prameswari
+            </h1>
+            <h2
+              className={`text-2xl md:text-3xl font-semibold mb-6 ${
+                darkMode ? "text-gray-300" : "text-gray-600"
+              }`}
+            >
+              Crafting <span className="underline decoration-wavy">delightful</span>{" "}
+              digital experiences
+            </h2>
+            <p
+              className={`text-lg mb-8 leading-relaxed ${
+                darkMode ? "text-gray-300" : "text-gray-600"
+              }`}
+            >
+              I design and build intuitive interfaces that users love. With a focus on
+              human-centered design, I create solutions that are both beautiful and
+              functional.
+            </p>
+            <div className="flex flex-wrap gap-4 justify-center md:justify-start">
+              <motion.button
+                whileHover={{ y: -2 }}
+                whileTap={{ scale: 0.98 }}
+                onClick={() => scrollToSection("portfolio")}
+                className={`px-6 py-3 rounded-full font-medium flex items-center gap-2 ${
+                  darkMode
+                    ? "bg-pink-600 hover:bg-pink-700"
+                    : "bg-pink-500 hover:bg-pink-600"
+                } text-white shadow-lg`}
+              >
+                View My Work <FiArrowRight />
+              </motion.button>
+              <motion.button
+                whileHover={{ y: -2 }}
+                whileTap={{ scale: 0.98 }}
+                onClick={() => scrollToSection("contact")}
+                className={`px-6 py-3 rounded-full font-medium ${
+                  darkMode
+                    ? "bg-gray-700 hover:bg-gray-600"
+                    : "bg-pink-100 hover:bg-pink-200"
+                } shadow-lg`}
+              >
+                Contact Me
+              </motion.button>
             </div>
           </motion.div>
         </section>
 
         {/* About Section */}
-        <section id="about" className="py-12 md:py-20">
+        <section id="about" className="min-h-screen py-20">
           <motion.div
             initial={{ opacity: 0 }}
             whileInView={{ opacity: 1 }}
             transition={{ duration: 0.8 }}
-            viewport={{ once: true }}
+            viewport={{ once: true, margin: "-100px" }}
+            className="max-w-6xl mx-auto"
           >
-            <h2 className="text-3xl md:text-4xl font-bold mb-8 text-center">
-              About <span className={`${darkMode ? 'text-pink-300' : 'text-pink-600'}`}>Me</span>
-            </h2>
-            <div className={`max-w-4xl mx-auto p-6 rounded-xl ${darkMode ? 'bg-gray-800' : 'bg-white'} shadow-lg`}>
-              <div className="grid md:grid-cols-2 gap-8">
-                <div>
-                  <h3 className="text-xl font-semibold mb-4">Personal Info</h3>
-                  <ul className="space-y-3">
-                    <li className="flex">
-                      <span className={`w-28 font-medium ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>Name:</span>
-                      <span>Jane Doe</span>
+            <div className="flex flex-col md:flex-row gap-12 items-center mb-16">
+              <div className="md:w-1/2">
+                <h2
+                  className={`text-4xl font-bold mb-6 ${
+                    darkMode ? "text-pink-400" : "text-pink-600"
+                  }`}
+                >
+                  About <span className="underline decoration-wavy">Me</span>
+                </h2>
+                <div
+                  className={`space-y-4 text-lg leading-relaxed ${
+                    darkMode ? "text-gray-300" : "text-gray-600"
+                  }`}
+                >
+                  <p>
+                  Saya adalah seorang Mahasiswa lulusan SMA, yang sedang menempuh pendidikan di Ma’soem University semester 4 Jurusan Sistem Informasi.
+                  </p>
+                  <p>
+                  Semenjak saya memasuki dunia perkuliahan, saya menjadi banyak pengalaman.
+                  </p>
+                  <p>
+                  Saya juga seseorang yang selalu termotivasi untuk mencoba hal baru, saya mampu bersosialisasi dengan baik, bisa beradaptasi dengan sesama dan mudah bergaul. Saya mampu bertanggung jawab atas semua tanggung jawab saya.
+                  </p>
+                </div>
+              </div>
+              <div className="md:w-1/2">
+                <div
+                  className={`p-8 rounded-3xl shadow-xl ${
+                    darkMode ? "bg-gray-800" : "bg-white"
+                  }`}
+                >
+                  <h3 className="text-xl font-semibold mb-6 flex items-center gap-3">
+                    <FiUser
+                      className={`${
+                        darkMode ? "text-pink-400" : "text-pink-600"
+                      } text-2xl`}
+                    />
+                    <span>Personal Info</span>
+                  </h3>
+                  <ul className="space-y-4">
+                    <li className="flex items-start gap-4">
+                      <FiMail
+                        className={`mt-1 flex-shrink-0 ${
+                          darkMode ? "text-pink-400" : "text-pink-600"
+                        }`}
+                      />
+                      <div>
+                        <h4 className="font-medium">Email</h4>
+                        <p
+                          className={`text-sm ${
+                            darkMode ? "text-gray-400" : "text-gray-500"
+                          }`}
+                        >
+                          ajengreyra08@gmail.com
+                        </p>
+                      </div>
                     </li>
-                    <li className="flex">
-                      <span className={`w-28 font-medium ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>Email:</span>
-                      <span>jane.doe@example.com</span>
+                    <li className="flex items-start gap-4">
+                      <FiPhone
+                        className={`mt-1 flex-shrink-0 ${
+                          darkMode ? "text-pink-400" : "text-pink-600"
+                        }`}
+                      />
+                      <div>
+                        <h4 className="font-medium">Phone</h4>
+                        <p
+                          className={`text-sm ${
+                            darkMode ? "text-gray-400" : "text-gray-500"
+                          }`}
+                        >
+                          0822232323
+                        </p>
+                      </div>
                     </li>
-                    <li className="flex">
-                      <span className={`w-28 font-medium ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>Phone:</span>
-                      <span>+1 (123) 456-7890</span>
-                    </li>
-                    <li className="flex">
-                      <span className={`w-28 font-medium ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>Location:</span>
-                      <span>San Francisco, CA</span>
+                    <li className="flex items-start gap-4">
+                      <FiMapPin
+                        className={`mt-1 flex-shrink-0 ${
+                          darkMode ? "text-pink-400" : "text-pink-600"
+                        }`}
+                      />
+                      <div>
+                        <h4 className="font-medium">Location</h4>
+                        <p
+                          className={`text-sm ${
+                            darkMode ? "text-gray-400" : "text-gray-500"
+                          }`}
+                        >
+                          Rancaekek, Bandung
+                        </p>
+                      </div>
                     </li>
                   </ul>
                 </div>
-                <div>
-                  <h3 className="text-xl font-semibold mb-4">Skills</h3>
-                  <div className="space-y-4">
-                    {['JavaScript', 'React', 'Node.js', 'Next.js', 'Tailwind CSS'].map((skill) => (
-                      <div key={skill}>
-                        <div className="flex justify-between mb-1">
-                          <span>{skill}</span>
-                          <span>90%</span>
-                        </div>
-                        <div className={`w-full h-2 rounded-full ${darkMode ? 'bg-gray-700' : 'bg-pink-100'}`}>
-                          <div
-                            className={`h-full rounded-full ${darkMode ? 'bg-pink-500' : 'bg-pink-600'}`}
-                            style={{ width: '90%' }}
-                          ></div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+              </div>
+            </div>
+
+            <div className="grid md:grid-cols-2 gap-8 mt-12">
+              <div
+                className={`p-8 rounded-3xl shadow-xl ${
+                  darkMode ? "bg-gray-800" : "bg-white"
+                }`}
+              >
+                <h3 className="text-xl font-semibold mb-6 flex items-center gap-3">
+                  <FiBriefcase
+                    className={`${
+                      darkMode ? "text-pink-400" : "text-pink-600"
+                    } text-2xl`}
+                  />
+                  <span>Experience</span>
+                </h3>
+                <div className="space-y-6">
+                  <motion.div
+                    whileHover={{ x: 4 }}
+                    className="border-l-2 border-pink-500 pl-4"
+                  >
+                    <h4 className="font-medium">Senior UI/UX Designer</h4>
+                    <p
+                      className={`text-sm mb-2 ${
+                        darkMode ? "text-gray-400" : "text-gray-500"
+                      }`}
+                    >
+                      Creative Agency • 2021-Present
+                    </p>
+                    <p
+                      className={`text-sm ${
+                        darkMode ? "text-gray-300" : "text-gray-600"
+                      }`}
+                    >
+                      Leading design team for client projects across various industries.
+                    </p>
+                  </motion.div>
+                  <motion.div
+                    whileHover={{ x: 4 }}
+                    className="border-l-2 border-pink-500 pl-4"
+                  >
+                    <h4 className="font-medium">UI Designer</h4>
+                    <p
+                      className={`text-sm mb-2 ${
+                        darkMode ? "text-gray-400" : "text-gray-500"
+                      }`}
+                    >
+                      Tech Startup • 2019-2021
+                    </p>
+                    <p
+                      className={`text-sm ${
+                        darkMode ? "text-gray-300" : "text-gray-600"
+                      }`}
+                    >
+                      Designed core product features and design system components.
+                    </p>
+                  </motion.div>
+                  <motion.div
+                    whileHover={{ x: 4 }}
+                    className="border-l-2 border-pink-500 pl-4"
+                  >
+                    <h4 className="font-medium">UX Intern</h4>
+                    <p
+                      className={`text-sm mb-2 ${
+                        darkMode ? "text-gray-400" : "text-gray-500"
+                      }`}
+                    >
+                      Design Studio • 2018-2019
+                    </p>
+                    <p
+                      className={`text-sm ${
+                        darkMode ? "text-gray-300" : "text-gray-600"
+                      }`}
+                    >
+                      Conducted user research and created wireframes.
+                    </p>
+                  </motion.div>
                 </div>
               </div>
-              <div className="mt-8">
-                <h3 className="text-xl font-semibold mb-4">Bio</h3>
-                <p className={`${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
-                  Passionate full-stack developer with 5+ years of experience building web applications. Specialized in JavaScript technologies across the whole stack (React.js, Node.js, Express, MongoDB). Strong advocate for clean code, user experience, and agile methodologies.
-                </p>
+
+              <div
+                className={`p-8 rounded-3xl shadow-xl ${
+                  darkMode ? "bg-gray-800" : "bg-white"
+                }`}
+              >
+                <h3 className="text-xl font-semibold mb-6 flex items-center gap-3">
+                  <FiAward
+                    className={`${
+                      darkMode ? "text-pink-400" : "text-pink-600"
+                    } text-2xl`}
+                  />
+                  <span>Skills & Tools</span>
+                </h3>
+                <div className="space-y-6">
+                  <div>
+                    <h4 className="font-medium mb-2">Design</h4>
+                    <div className="flex flex-wrap gap-2">
+                      {[
+                        "UI Design",
+                        "UX Research",
+                        "Wireframing",
+                        "Prototyping",
+                        "User Testing",
+                        "Illustration",
+                      ].map((skill) => (
+                        <motion.span
+                          key={skill}
+                          whileHover={{ y: -2 }}
+                          className={`px-3 py-1 rounded-full text-sm ${
+                            darkMode
+                              ? "bg-gray-700 text-pink-300"
+                              : "bg-pink-100 text-pink-700"
+                          }`}
+                        >
+                          {skill}
+                        </motion.span>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <h4 className="font-medium mb-2">Development</h4>
+                    <div className="flex flex-wrap gap-2">
+                      {[
+                        "HTML/CSS",
+                        "JavaScript",
+                        "React",
+                        "Next.js",
+                        "Tailwind CSS",
+                        "Framer Motion",
+                      ].map((skill) => (
+                        <motion.span
+                          key={skill}
+                          whileHover={{ y: -2 }}
+                          className={`px-3 py-1 rounded-full text-sm ${
+                            darkMode
+                              ? "bg-gray-700 text-purple-300"
+                              : "bg-purple-100 text-purple-700"
+                          }`}
+                        >
+                          {skill}
+                        </motion.span>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <h4 className="font-medium mb-2">Tools</h4>
+                    <div className="flex flex-wrap gap-2">
+                      {[
+                        "Figma",
+                        "Adobe XD",
+                        "Sketch",
+                        "Photoshop",
+                        "Illustrator",
+                        "VS Code",
+                      ].map((skill) => (
+                        <motion.span
+                          key={skill}
+                          whileHover={{ y: -2 }}
+                          className={`px-3 py-1 rounded-full text-sm ${
+                            darkMode
+                              ? "bg-gray-700 text-yellow-300"
+                              : "bg-yellow-100 text-yellow-700"
+                          }`}
+                        >
+                          {skill}
+                        </motion.span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </motion.div>
         </section>
 
         {/* Portfolio Section */}
-        <section id="portfolio" className="py-12 md:py-20">
+        <section id="portfolio" className="min-h-screen py-20">
           <motion.div
             initial={{ opacity: 0 }}
             whileInView={{ opacity: 1 }}
             transition={{ duration: 0.8 }}
-            viewport={{ once: true }}
+            viewport={{ once: true, margin: "-100px" }}
+            className="max-w-6xl mx-auto"
           >
-            <h2 className="text-3xl md:text-4xl font-bold mb-8 text-center">
-              My <span className={`${darkMode ? 'text-pink-300' : 'text-pink-600'}`}>Portfolio</span>
-            </h2>
-            
-            <AnimatePresence>
-              {selectedPortfolio ? (
+            <div className="text-center mb-16">
+              <h2
+                className={`text-4xl font-bold mb-4 ${
+                  darkMode ? "text-pink-400" : "text-pink-600"
+                }`}
+              >
+                My <span className="underline decoration-wavy">Work</span>
+              </h2>
+              <p
+                className={`max-w-2xl mx-auto text-lg ${
+                  darkMode ? "text-gray-400" : "text-gray-500"
+                }`}
+              >
+                Selected projects that showcase my design process and problem-solving
+                approach.
+              </p>
+            </div>
+
+            {/* Timeline for Portfolio */}
+            <div className="relative">
+              <div
+                className={`absolute left-4 md:left-1/2 w-1 ${
+                  darkMode ? "bg-pink-600" : "bg-pink-300"
+                } h-full transform -translate-x-1/2`}
+              ></div>
+              {portfolios.map((item, index) => (
                 <motion.div
-                  key="detail"
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -20 }}
-                  transition={{ duration: 0.3 }}
-                  className={`max-w-4xl mx-auto p-6 rounded-xl ${darkMode ? 'bg-gray-800' : 'bg-white'} shadow-lg`}
+                  key={item.id}
+                  initial={{ opacity: 0, x: index % 2 === 0 ? -50 : 50 }}
+                  whileInView={{ opacity: 1, x: 0 }}
+                  transition={{ duration: 0.6, delay: index * 0.2 }}
+                  viewport={{ once: true, margin: "-50px" }}
+                  className={`relative mb-12 flex ${
+                    index % 2 === 0 ? "md:flex-row" : "md:flex-row-reverse"
+                  } flex-col items-center md:items-start`}
                 >
-                  <button
-                    onClick={() => setSelectedPortfolio(null)}
-                    className={`mb-4 flex items-center ${darkMode ? 'text-pink-300 hover:text-pink-200' : 'text-pink-600 hover:text-pink-800'}`}
+                  <div
+                    className={`absolute left-4 md:left-1/2 w-4 h-4 ${
+                      darkMode ? "bg-pink-400" : "bg-pink-600"
+                    } rounded-full transform -translate-x-1/2 z-10`}
+                  ></div>
+                  <motion.div
+                    whileHover={{ y: -8 }}
+                    onClick={() => openPortfolioDetail(item)}
+                    className={`w-full md:w-5/12 p-6 rounded-2xl shadow-xl cursor-pointer ${
+                      darkMode ? "bg-gray-800 hover:bg-gray-700" : "bg-white hover:bg-pink-100"
+                    } ${index % 2 === 0 ? "md:mr-8" : "md:ml-8"}`}
                   >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" viewBox="0 0 20 20" fill="currentColor">
-                      <path fillRule="evenodd" d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z" clipRule="evenodd" />
-                    </svg>
-                    Back to Portfolio
-                  </button>
-                  <h3 className="text-2xl font-bold mb-2">{selectedPortfolio.title}</h3>
-                  <p className={`text-sm mb-4 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{selectedPortfolio.period}</p>
-                  <p className={`mb-6 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>{selectedPortfolio.details}</p>
-                  <div className={`p-4 rounded-lg ${darkMode ? 'bg-gray-700' : 'bg-pink-100'}`}>
-                    <h4 className="font-semibold mb-2">Key Achievements:</h4>
-                    <ul className={`list-disc pl-5 space-y-1 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
-                      <li>Increased user engagement by 45% through UI improvements</li>
-                      <li>Reduced page load time by 60% with optimized assets</li>
-                      <li>Implemented automated testing reducing bugs by 30%</li>
-                    </ul>
-                  </div>
-                </motion.div>
-              ) : (
-                <motion.div
-                  key="timeline"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  transition={{ duration: 0.5 }}
-                  className="max-w-4xl mx-auto"
-                >
-                  <div className="relative">
-                    {/* Timeline line */}
-                    <div className={`absolute left-4 md:left-1/2 h-full w-0.5 ${darkMode ? 'bg-gray-600' : 'bg-pink-200'}`}></div>
-                    
-                    {portfolioItems.map((item, index) => (
-                      <motion.div
-                        key={item.id}
-                        initial={{ opacity: 0, x: index % 2 === 0 ? -50 : 50 }}
-                        whileInView={{ opacity: 1, x: 0 }}
-                        transition={{ duration: 0.5, delay: index * 0.1 }}
-                        viewport={{ once: true }}
-                        className={`mb-8 flex flex-col ${index % 2 === 0 ? 'md:flex-row' : 'md:flex-row-reverse'} items-center`}
-                      >
-                        <div className={`md:w-1/2 ${index % 2 === 0 ? 'md:pr-8 md:text-right' : 'md:pl-8'}`}>
-                          <div className={`p-6 rounded-xl ${darkMode ? 'bg-gray-800' : 'bg-white'} shadow-lg cursor-pointer hover:shadow-xl transition-shadow`} onClick={() => setSelectedPortfolio(item)}>
-                            <h3 className="text-xl font-bold mb-2">{item.title}</h3>
-                            <p className={`text-sm mb-3 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{item.period}</p>
-                            <p className={`${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>{item.description}</p>
-                            <button
-                              className={`mt-4 inline-flex items-center ${darkMode ? 'text-pink-300 hover:text-pink-200' : 'text-pink-600 hover:text-pink-800'}`}
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                setSelectedPortfolio(item)
-                              }}
-                            >
-                              View Details
-                              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 ml-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                              </svg>
-                            </button>
-                          </div>
-                        </div>
-                        <div className="w-8 h-8 md:w-10 md:h-10 flex-shrink-0 rounded-full flex items-center justify-center z-10">
-                          <div className={`w-6 h-6 md:w-8 md:h-8 rounded-full ${darkMode ? 'bg-pink-500' : 'bg-pink-600'}`}></div>
-                        </div>
-                        <div className="md:w-1/2"></div>
-                      </motion.div>
-                    ))}
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </motion.div>
-        </section>
-
-        {/* Feedback Section */}
-        <section id="feedback" className="py-12 md:py-20">
-          <motion.div
-            initial={{ opacity: 0 }}
-            whileInView={{ opacity: 1 }}
-            transition={{ duration: 0.8 }}
-            viewport={{ once: true }}
-          >
-            <h2 className="text-3xl md:text-4xl font-bold mb-8 text-center">
-              Feedback & <span className={`${darkMode ? 'text-pink-300' : 'text-pink-600'}`}>Rating</span>
-            </h2>
-            <div className={`max-w-4xl mx-auto p-6 rounded-xl ${darkMode ? 'bg-gray-800' : 'bg-white'} shadow-lg`}>
-              {/* Average Rating Display */}
-              <div className="text-center mb-8">
-                <div className="flex justify-center mb-2">
-                  {[...Array(5)].map((_, i) => (
-                    <svg
-                      key={i}
-                      className={`w-6 h-6 ${i < Math.round(averageRating) ? 'text-yellow-400' : 'text-gray-300'}`}
-                      fill="currentColor"
-                      viewBox="0 0 20 20"
-                      xmlns="http://www.w3.org/2000/svg"
+                    <div
+                      className={`text-sm font-medium mb-1 ${
+                        darkMode ? "text-pink-400" : "text-pink-600"
+                      }`}
                     >
-                      <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"></path>
-                    </svg>
-                  ))}
-                </div>
-                <p className={`${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
-                  Rating: {averageRating} (from {totalVoters} voters)
-                </p>
-              </div>
-
-              {/* Rating Submission */}
-              <div className="mb-8">
-                <h3 className="text-xl font-semibold mb-4">Rate This Portfolio</h3>
-                <div className="flex justify-center mb-4">
-                  {[...Array(5)].map((_, i) => (
-                    <button
-                      key={i}
-                      onClick={() => setRating(i + 1)}
-                      className={`w-8 h-8 ${rating > i ? 'text-yellow-400' : 'text-gray-300'} focus:outline-none`}
+                      {item.period}
+                    </div>
+                    <h3 className="text-xl font-bold mb-2">{item.title}</h3>
+                    <div
+                      className={`text-sm font-medium mb-3 ${
+                        darkMode ? "text-gray-400" : "text-gray-500"
+                      }`}
                     >
-                      <svg
-                        fill="currentColor"
-                        viewBox="0 0 20 20"
-                        xmlns="http://www.w3.org/2000/svg"
-                      >
-                        <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3 .921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784 .57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81 .588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"></path>
-                      </svg>
-                    </button>
-                  ))}
-                </div>
-                <button
-                  onClick={handleRatingSubmit}
-                  className={`px-6 py-2 rounded-lg font-medium ${darkMode ? 'bg-pink-600 hover:bg-pink-700' : 'bg-pink-500 hover:bg-pink-600'} text-white disabled:opacity-50`}
-                  disabled={rating === 0}
-                >
-                  Submit Rating
-                </button>
-              </div>
-
-              {/* Comment Submission */}
-              <div className="mb-8">
-                <h3 className="text-xl font-semibold mb-4">Leave a Comment</h3>
-                <form onSubmit={handleCommentSubmit} className="space-y-4">
-                  <div>
-                    <label htmlFor="commenterName" className={`block text-sm font-medium mb-1 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
-                      Name
-                    </label>
-                    <input
-                      type="text"
-                      id="commenterName"
-                      value={commenterName}
-                      onChange={(e) => setCommenterName(e.target.value)}
-                      className={`w-full px-4 py-2 rounded-lg ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-300'} border focus:outline-none focus:ring-2 ${darkMode ? 'focus:ring-pink-500' : 'focus:ring-pink-300'}`}
-                      placeholder="Your name"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label htmlFor="comment" className={`block text-sm font-medium mb-1 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
-                      Comment
-                    </label>
-                    <textarea
-                      id="comment"
-                      value={newComment}
-                      onChange={(e) => setNewComment(e.target.value)}
-                      rows="4"
-                      className={`w-full px-4 py-2 rounded-lg ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-300'} border focus:outline-none focus:ring-2 ${darkMode ? 'focus:ring-pink-500' : 'focus:ring-pink-300'}`}
-                      placeholder="Your comment"
-                      required
-                    ></textarea>
-                  </div>
-                  <button
-                    type="submit"
-                    className={`px-6 py-3 rounded-lg font-medium ${darkMode ? 'bg-pink-600 hover:bg-pink-700' : 'bg-pink-500 hover:bg-pink-600'} text-white`}
-                  >
-                    Submit Comment
-                  </button>
-                </form>
-              </div>
-
-              {/* Comments Display */}
-              <div>
-                <h3 className="text-xl font-semibold mb-4">Comments</h3>
-                {comments.length === 0 ? (
-                  <p className={`${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>No comments yet.</p>
-                ) : (
-                  <div className="space-y-4">
-                    {comments.map((comment, index) => (
-                      <motion.div
-                        key={index}
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.3, delay: index * 0.1 }}
-                        className={`p-4 rounded-lg ${darkMode ? 'bg-gray-700' : 'bg-pink-100'}`}
-                      >
-                        <div className="flex justify-between items-center mb-2">
-                          <h4 className="font-semibold">{comment.name}</h4>
-                          <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                            {new Date(comment.timestamp).toLocaleDateString()}
-                          </p>
-                        </div>
-                        <p className={`${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>{comment.comment}</p>
-                      </motion.div>
-                    ))}
-                  </div>
-                )}
-              </div>
+                      {item.company}
+                    </div>
+                    <p
+                      className={`mb-4 ${
+                        darkMode ? "text-gray-300" : "text-gray-600"
+                      }`}
+                    >
+                      {item.description}
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {item.tags.map((tag) => (
+                        <span
+                          key={tag}
+                          className={`px-2 py-1 rounded-full text-xs ${
+                            darkMode
+                              ? "bg-gray-700 text-pink-300"
+                              : "bg-pink-100 text-pink-700"
+                          }`}
+                        >
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                  </motion.div>
+                </motion.div>
+              ))}
             </div>
           </motion.div>
         </section>
 
         {/* Contact Section */}
-        <section id="contact" className="py-12 md:py-20">
+        <section id="contact" className="min-h-screen py-20">
           <motion.div
             initial={{ opacity: 0 }}
             whileInView={{ opacity: 1 }}
             transition={{ duration: 0.8 }}
-            viewport={{ once: true }}
+            viewport={{ once: true, margin: "-100px" }}
+            className="max-w-4xl mx-auto"
           >
-            <h2 className="text-3xl md:text-4xl font-bold mb-8 text-center">
-              Get In <span className={`${darkMode ? 'text-pink-300' : 'text-pink-600'}`}>Touch</span>
-            </h2>
-            <div className={`max-w-4xl mx-auto p-6 rounded-xl ${darkMode ? 'bg-gray-800' : 'bg-white'} shadow-lg`}>
+            <div className="text-center mb-16">
+              <h2
+                className={`text-4xl font-bold mb-4 ${
+                  darkMode ? "text-pink-400" : "text-pink-600"
+                }`}
+              >
+                Get In <span className="underline decoration-wavy">Touch</span>
+              </h2>
+              <p
+                className={`max-w-2xl mx-auto text-lg ${
+                  darkMode ? "text-gray-400" : "text-gray-500"
+                }`}
+              >
+                Have a project in mind or want to discuss potential opportunities? I'd
+                love to hear from you.
+              </p>
+            </div>
+
+            <div
+              className={`p-8 rounded-3xl shadow-xl ${
+                darkMode ? "bg-gray-800" : "bg-white"
+              }`}
+            >
               <div className="grid md:grid-cols-2 gap-8">
                 <div>
-                  <h3 className="text-xl font-semibold mb-4">Contact Info</h3>
+                  <h3 className="text-2xl font-semibold mb-6">Contact Information</h3>
+                  <p
+                    className={`mb-6 ${
+                      darkMode ? "text-gray-300" : "text-gray-600"
+                    }`}
+                  >
+                    Feel free to reach out through any of these channels. I typically
+                    respond within 24 hours.
+                  </p>
                   <ul className="space-y-4">
-                    <li className="flex items-start">
-                      <div className={`p-3 rounded-full mr-4 ${darkMode ? 'bg-gray-700' : 'bg-pink-100'}`}>
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                        </svg>
-                      </div>
+                    <li className="flex items-start gap-4">
+                      <FiMail
+                        className={`mt-1 flex-shrink-0 text-2xl ${
+                          darkMode ? "text-pink-400" : "text-pink-600"
+                        }`}
+                      />
                       <div>
                         <h4 className="font-medium">Email</h4>
-                        <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>jane.doe@example.com</p>
+                        <p
+                          className={`text-sm ${
+                            darkMode ? "text-gray-400" : "text-gray-500"
+                          }`}
+                        >
+                          ajengreyra08@gmail.com
+                        </p>
                       </div>
                     </li>
-                    <li className="flex items-start">
-                      <div className={`p-3 rounded-full mr-4 ${darkMode ? 'bg-gray-700' : 'bg-pink-100'}`}>
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
-                        </svg>
-                      </div>
+                    <li className="flex items-start gap-4">
+                      <FiPhone
+                        className={`mt-1 flex-shrink-0 text-2xl ${
+                          darkMode ? "text-pink-400" : "text-pink-600"
+                        }`}
+                      />
                       <div>
                         <h4 className="font-medium">Phone</h4>
-                        <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>+1 (123) 456-7890</p>
+                        <p
+                          className={`text-sm ${
+                            darkMode ? "text-gray-400" : "text-gray-500"
+                          }`}
+                        >
+                          0832732323
+                        </p>
                       </div>
                     </li>
-                    <li className="flex items-start">
-                      <div className={`p-3 rounded-full mr-4 ${darkMode ? 'bg-gray-700' : 'bg-pink-100'}`}>
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 3 0 11-6 0 3 3 0 016 0z" />
-                        </svg>
-                      </div>
+                    <li className="flex items-start gap-4">
+                      <FiMapPin
+                        className={`mt-1 flex-shrink-0 text-2xl ${
+                          darkMode ? "text-pink-400" : "text-pink-600"
+                        }`}
+                      />
                       <div>
                         <h4 className="font-medium">Location</h4>
-                        <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>San Francisco, CA</p>
+                        <p
+                          className={`text-sm ${
+                            darkMode ? "text-gray-400" : "text-gray-500"
+                          }`}
+                        >
+                          Rancaekek, Bandung
+                        </p>
                       </div>
                     </li>
                   </ul>
+                  <div className="mt-8 flex gap-4">
+                    {socialLinks.map((link, index) => (
+                      <motion.a
+                        key={index}
+                        href={link.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        whileHover={{ y: -4 }}
+                        className={`p-3 rounded-full ${
+                          darkMode
+                            ? "bg-gray-700 text-pink-300"
+                            : "bg-pink-100 text-pink-600"
+                        } shadow-md`}
+                      >
+                        {link.icon}
+                      </motion.a>
+                    ))}
+                  </div>
                 </div>
+
                 <div>
-                  <h3 className="text-xl font-semibold mb-4">Send Me a Message</h3>
                   <form className="space-y-4">
                     <div>
-                      <label htmlFor="name" className={`block text-sm font-medium mb-1 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>Name</label>
+                      <label
+                        htmlFor="name"
+                        className={`block text-sm font-medium mb-2 ${
+                          darkMode ? "text-gray-300" : "text-gray-700"
+                        }`}
+                      >
+                        Name
+                      </label>
                       <input
                         type="text"
                         id="name"
-                        className={`w-full px-4 py-2 rounded-lg ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-300'} border focus:outline-none focus:ring-2 ${darkMode ? 'focus:ring-pink-500' : 'focus:ring-pink-300'}`}
+                        className={`w-full px-4 py-3 rounded-lg border focus:ring-2 focus:outline-none transition-all ${
+                          darkMode
+                            ? "bg-gray-700 border-gray-600 focus:ring-pink-500 focus:border-pink-500"
+                            : "bg-white border-gray-300 focus:ring-pink-400 focus:border-pink-400"
+                        }`}
                         placeholder="Your name"
                       />
                     </div>
                     <div>
-                      <label htmlFor="email" className={`block text-sm font-medium mb-1 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>Email</label>
+                      <label
+                        htmlFor="email"
+                        className={`block text-sm font-medium mb-2 ${
+                          darkMode ? "text-gray-300" : "text-gray-700"
+                        }`}
+                      >
+                        Email
+                      </label>
                       <input
                         type="email"
                         id="email"
-                        className={`w-full px-4 py-2 rounded-lg ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-300'} border focus:outline-none focus:ring-2 ${darkMode ? 'focus:ring-pink-500' : 'focus:ring-pink-300'}`}
-                        placeholder="Your email"
+                        className={`w-full px-4 py-3 rounded-lg border focus:ring-2 focus:outline-none transition-all ${
+                          darkMode
+                            ? "bg-gray-700 border-gray-600 focus:ring-pink-500 focus:border-pink-500"
+                            : "bg-white border-gray-300 focus:ring-pink-400 focus:border-pink-400"
+                        }`}
+                        placeholder="your.email@example.com"
                       />
                     </div>
                     <div>
-                      <label htmlFor="message" className={`block text-sm font-medium mb-1 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>Message</label>
+                      <label
+                        htmlFor="message"
+                        className={`block text-sm font-medium mb-2 ${
+                          darkMode ? "text-gray-300" : "text-gray-700"
+                        }`}
+                      >
+                        Message
+                      </label>
                       <textarea
                         id="message"
-                        rows="4"
-                        className={`w-full px-4 py-2 rounded-lg ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-300'} border focus:outline-none focus:ring-2 ${darkMode ? 'focus:ring-pink-500' : 'focus:ring-pink-300'}`}
-                        placeholder="Your message"
+                        rows="5"
+                        className={`w-full px-4 py-3 rounded-lg border focus:ring-2 focus:outline-none transition-all ${
+                          darkMode
+                            ? "bg-gray-700 border-gray-600 focus:ring-pink-500 focus:border-pink-500"
+                            : "bg-white border-gray-300 focus:ring-pink-400 focus:border-pink-400"
+                        }`}
+                        placeholder="Tell me about your project..."
                       ></textarea>
                     </div>
-                    <button
+                    <motion.button
                       type="submit"
-                      className={`w-full px-6 py-3 rounded-lg font-medium ${darkMode ? 'bg-pink-600 hover:bg-pink-700' : 'bg-pink-500 hover:bg-pink-600'} text-white`}
+                      whileHover={{ y: -2 }}
+                      whileTap={{ scale: 0.98 }}
+                      className={`w-full px-6 py-4 rounded-full font-medium ${
+                        darkMode
+                          ? "bg-pink-600 hover:bg-pink-700"
+                          : "bg-pink-500 hover:bg-pink-600"
+                      } text-white shadow-lg`}
                     >
                       Send Message
-                    </button>
+                    </motion.button>
                   </form>
                 </div>
               </div>
@@ -720,22 +1119,262 @@ export default function Home() {
           </motion.div>
         </section>
 
-        {/* Chatbot Section */}
-        <section id="chatbot" className="py-12 md:py-20">
+        {/* Feedback Section */}
+        <section id="feedback" className="min-h-screen py-20">
           <motion.div
             initial={{ opacity: 0 }}
             whileInView={{ opacity: 1 }}
             transition={{ duration: 0.8 }}
-            viewport={{ once: true }}
+            viewport={{ once: true, margin: "-100px" }}
+            className="max-w-4xl mx-auto"
           >
-            <h2 className="text-3xl md:text-4xl font-bold mb-8 text-center">
-              Chat with <span className={`${darkMode ? 'text-pink-300' : 'text-pink-600'}`}>AI</span>
-            </h2>
-            <div className={`max-w-4xl mx-auto p-6 rounded-xl ${darkMode ? 'bg-gray-800' : 'bg-white'} shadow-lg`}>
-              <h3 className="text-xl font-semibold mb-4">Ask Me Anything</h3>
-              <form onSubmit={handleChatSubmit} className="space-y-4">
+            <div className="text-center mb-16">
+              <h2
+                className={`text-4xl font-bold mb-4 ${
+                  darkMode ? "text-pink-400" : "text-pink-600"
+                }`}
+              >
+                Share Your <span className="underline decoration-wavy">Feedback</span>
+              </h2>
+              <p
+                className={`max-w-2xl mx-auto text-lg ${
+                  darkMode ? "text-gray-400" : "text-gray-500"
+                }`}
+              >
+                I value your thoughts! Please leave a comment or rate my portfolio.
+              </p>
+            </div>
+
+            <div
+              className={`p-8 rounded-3xl shadow-xl ${
+                darkMode ? "bg-gray-800" : "bg-white"
+              }`}
+            >
+              {/* Rating Section */}
+              <div className="mb-12">
+                <h3 className="text-2xl font-semibold mb-4">Rate My Portfolio</h3>
+                <div className="flex items-center gap-4 mb-4">
+                  <div className="flex gap-1">
+                    {[1, 2, 3, 4, 5].map((star) => (
+                      <motion.button
+                        key={star}
+                        whileHover={{ scale: 1.2 }}
+                        whileTap={{ scale: 0.9 }}
+                        onClick={() => setNewRating(star)}
+                        onMouseEnter={() => setRatingHover(star)}
+                        onMouseLeave={() => setRatingHover(0)}
+                        className="focus:outline-none"
+                      >
+                        <FiStar
+                          size={32}
+                          className={
+                            star <= (ratingHover || newRating)
+                              ? darkMode
+                                ? "text-yellow-400 fill-yellow-400"
+                                : "text-yellow-500 fill-yellow-500"
+                              : darkMode
+                              ? "text-gray-600"
+                              : "text-gray-300"
+                          }
+                        />
+                      </motion.button>
+                    ))}
+                  </div>
+                  <motion.button
+                    whileHover={{ y: -2 }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={handleRatingSubmit}
+                    disabled={newRating === 0}
+                    className={`px-4 py-2 rounded-full font-medium ${
+                      newRating === 0
+                        ? "bg-gray-400 cursor-not-allowed"
+                        : darkMode
+                        ? "bg-pink-600 hover:bg-pink-700"
+                        : "bg-pink-500 hover:bg-pink-600"
+                    } text-white shadow-lg`}
+                  >
+                    Submit Rating
+                  </motion.button>
+                </div>
+                <p
+                  className={`text-lg ${
+                    darkMode ? "text-gray-300" : "text-gray-600"
+                  }`}
+                >
+                  Rating: {averageRating} (from {ratings.length}{" "}
+                  {ratings.length === 1 ? "voter" : "voters"})
+                </p>
+              </div>
+
+              {/* Comment Form */}
+              <div className="mb-12">
+                <h3 className="text-2xl font-semibold mb-4">Leave a Comment</h3>
+                <form onSubmit={handleCommentSubmit} className="space-y-4">
+                  <div>
+                    <label
+                      htmlFor="commenterName"
+                      className={`block text-sm font-medium mb-2 ${
+                        darkMode ? "text-gray-300" : "text-gray-700"
+                      }`}
+                    >
+                      Your Name
+                    </label>
+                    <input
+                      type="text"
+                      id="commenterName"
+                      value={commenterName}
+                      onChange={(e) => setCommenterName(e.target.value)}
+                      className={`w-full px-4 py-3 rounded-lg border focus:ring-2 focus:outline-none transition-all ${
+                        darkMode
+                          ? "bg-gray-700 border-gray-600 focus:ring-pink-500 focus:border-pink-500"
+                          : "bg-white border-gray-300 focus:ring-pink-400 focus:border-pink-400"
+                      }`}
+                      placeholder="Your name"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label
+                      htmlFor="newComment"
+                      className={`block text-sm font-medium mb-2 ${
+                        darkMode ? "text-gray-300" : "text-gray-700"
+                      }`}
+                    >
+                      Your Comment
+                    </label>
+                    <textarea
+                      id="newComment"
+                      value={newComment}
+                      onChange={(e) => setNewComment(e.target.value)}
+                      rows="4"
+                      className={`w-full px-4 py-3 rounded-lg border focus:ring-2 focus:outline-none transition-all ${
+                        darkMode
+                          ? "bg-gray-700 border-gray-600 focus:ring-pink-500 focus:border-pink-500"
+                          : "bg-white border-gray-300 focus:ring-pink-400 focus:border-pink-400"
+                      }`}
+                      placeholder="Share your thoughts..."
+                      required
+                    ></textarea>
+                  </div>
+                  <motion.button
+                    type="submit"
+                    whileHover={{ y: -2 }}
+                    whileTap={{ scale: 0.98 }}
+                    className={`px-6 py-3 rounded-full font-medium ${
+                      darkMode
+                        ? "bg-pink-600 hover:bg-pink-700"
+                        : "bg-pink-500 hover:bg-pink-600"
+                    } text-white shadow-lg`}
+                  >
+                    Submit Comment
+                  </motion.button>
+                </form>
+              </div>
+
+              {/* Comments Display */}
+              <div>
+                <h3 className="text-2xl font-semibold mb-6">Comments</h3>
+                {comments.length === 0 ? (
+                  <p
+                    className={`text-lg ${
+                      darkMode ? "text-gray-400" : "text-gray-500"
+                    }`}
+                  >
+                    No comments yet. Be the first to share your thoughts!
+                  </p>
+                ) : (
+                  <div className="space-y-6">
+                    {comments.map((comment) => (
+                      <motion.div
+                        key={comment.id}
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.5 }}
+                        className={`p-6 rounded-2xl ${
+                          darkMode ? "bg-gray-700" : "bg-pink-50"
+                        }`}
+                      >
+                        <div className="flex items-center gap-4 mb-2">
+                          <div
+                            className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                              darkMode ? "bg-pink-600" : "bg-pink-500"
+                            } text-white font-semibold`}
+                          >
+                            {comment.name.charAt(0).toUpperCase()}
+                          </div>
+                          <div>
+                            <h4 className="font-medium">{comment.name}</h4>
+                            <p
+                              className={`text-sm ${
+                                darkMode ? "text-gray-400" : "text-gray-500"
+                              }`}
+                            >
+                              {comment.timestamp
+                                ? new Date(
+                                    comment.timestamp.seconds
+                                      ? comment.timestamp.seconds * 1000
+                                      : comment.timestamp
+                                  ).toLocaleDateString()
+                                : "Just now"}
+                            </p>
+                          </div>
+                        </div>
+                        <p
+                          className={`${
+                            darkMode ? "text-gray-300" : "text-gray-600"
+                          }`}
+                        >
+                          {comment.comment}
+                        </p>
+                      </motion.div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </motion.div>
+        </section>
+
+        {/* Chatbot Section */}
+        <section id="chatbot" className="min-h-screen py-20">
+          <motion.div
+            initial={{ opacity: 0 }}
+            whileInView={{ opacity: 1 }}
+            transition={{ duration: 0.8 }}
+            viewport={{ once: true, margin: "-100px" }}
+            className="max-w-4xl mx-auto"
+          >
+            <div className="text-center mb-16">
+              <h2
+                className={`text-4xl font-bold mb-4 ${
+                  darkMode ? "text-pink-400" : "text-pink-600"
+                }`}
+              >
+                Chat with <span className="underline decoration-wavy">AI</span>
+              </h2>
+              <p
+                className={`max-w-2xl mx-auto text-lg ${
+                  darkMode ? "text-gray-400" : "text-gray-500"
+                }`}
+              >
+                Have a question about design, tech, or my work? Ask my AI assistant!
+              </p>
+            </div>
+
+            <div
+              className={`p-8 rounded-3xl shadow-xl ${
+                darkMode ? "bg-gray-800" : "bg-white"
+              }`}
+            >
+              <h3 className="text-2xl font-semibold mb-4">Ask Me Anything</h3>
+              <form onSubmit={handleChatSubmit} className="space-y-4 mb-8">
                 <div>
-                  <label htmlFor="chatInput" className={`block text-sm font-medium mb-1 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+                  <label
+                    htmlFor="chatInput"
+                    className={`block text-sm font-medium mb-2 ${
+                      darkMode ? "text-gray-300" : "text-gray-700"
+                    }`}
+                  >
                     Your Question
                   </label>
                   <textarea
@@ -743,27 +1382,46 @@ export default function Home() {
                     value={chatInput}
                     onChange={(e) => setChatInput(e.target.value)}
                     rows="4"
-                    className={`w-full px-4 py-2 rounded-lg ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-300'} border focus:outline-none focus:ring-2 ${darkMode ? 'focus:ring-pink-500' : 'focus:ring-pink-300'}`}
-                    placeholder="Type your question here (e.g., 'Tell me about web development')"
+                    className={`w-full px-4 py-3 rounded-lg border focus:ring-2 focus:outline-none transition-all ${
+                      darkMode
+                        ? "bg-gray-700 border-gray-600 focus:ring-pink-500 focus:border-pink-500"
+                        : "bg-white border-gray-300 focus:ring-pink-400 focus:border-pink-400"
+                    }`}
+                    placeholder="E.g., What makes a great UI design?"
                     required
                   ></textarea>
                 </div>
-                <button
+                <motion.button
                   type="submit"
-                  className={`px-6 py-3 rounded-lg font-medium ${darkMode ? 'bg-pink-600 hover:bg-pink-700' : 'bg-pink-500 hover:bg-pink-600'} text-white`}
+                  whileHover={{ y: -2 }}
+                  whileTap={{ scale: 0.98 }}
+                  className={`px-6 py-3 rounded-full font-medium flex items-center gap-2 ${
+                    darkMode
+                      ? "bg-pink-600 hover:bg-pink-700"
+                      : "bg-pink-500 hover:bg-pink-600"
+                  } text-white shadow-lg`}
                 >
-                  Send
-                </button>
+                  Send <FiArrowRight />
+                </motion.button>
               </form>
+
               {chatResponse && (
                 <motion.div
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.3 }}
-                  className={`mt-6 p-4 rounded-lg ${darkMode ? 'bg-gray-700' : 'bg-pink-100'}`}
+                  transition={{ duration: 0.5 }}
+                  className={`p-6 rounded-2xl ${
+                    darkMode ? "bg-gray-700" : "bg-pink-50"
+                  }`}
                 >
                   <h4 className="font-semibold mb-2">AI Response:</h4>
-                  <p className={`${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>{chatResponse}</p>
+                  <p
+                    className={`${
+                      darkMode ? "text-gray-300" : "text-gray-600"
+                    }`}
+                  >
+                    {chatResponse}
+                  </p>
                 </motion.div>
               )}
             </div>
@@ -771,13 +1429,118 @@ export default function Home() {
         </section>
       </main>
 
-      <footer className={`py-6 ${darkMode ? 'bg-gray-800' : 'bg-pink-100'}`}>
-        <div className="container mx-auto px-4 text-center">
-          <p className={`${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-            © {new Date().getFullYear()} Jane Doe. All rights reserved.
-          </p>
-        </div>
-      </footer>
+      {/* Portfolio Detail Modal */}
+      <AnimatePresence>
+        {selectedPortfolio && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
+            onClick={closePortfolioDetail}
+          >
+            <motion.div
+              initial={{ scale: 0.9, y: 50 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.9, y: 50 }}
+              className={`relative max-w-4xl w-full max-h-[90vh] overflow-y-auto rounded-3xl shadow-2xl ${
+                darkMode ? "bg-gray-800" : "bg-white"
+              }`}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <button
+                onClick={closePortfolioDetail}
+                className={`absolute top-6 right-6 p-2 rounded-full ${
+                  darkMode ? "hover:bg-gray-700" : "hover:bg-pink-100"
+                }`}
+              >
+                <FiX size={24} />
+              </button>
+
+              <div className="p-8">
+                <div className="mb-8">
+                  <div
+                    className={`text-sm font-medium mb-2 ${
+                      darkMode ? "text-pink-400" : "text-pink-600"
+                    }`}
+                  >
+                    {selectedPortfolio.period}
+                  </div>
+                  <h2 className="text-3xl font-bold mb-2">{selectedPortfolio.title}</h2>
+                  <div
+                    className={`text-lg font-medium mb-6 ${
+                      darkMode ? "text-gray-400" : "text-gray-500"
+                    }`}
+                  >
+                    {selectedPortfolio.company}
+                  </div>
+                </div>
+
+                <div className="grid md:grid-cols-2 gap-8">
+                  <div>
+                    <div
+                      className={`h-64 rounded-2xl mb-6 ${
+                        darkMode ? "bg-gray-700" : "bg-pink-100"
+                      } flex items-center justify-center`}
+                    >
+                      <div
+                        className={`text-4xl ${
+                          darkMode ? "text-pink-400" : "text-pink-600"
+                        }`}
+                      >
+                        Project Preview
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-2 mb-8">
+                      {selectedPortfolio.tags.map((tag) => (
+                        <span
+                          key={tag}
+                          className={`px-3 py-1 rounded-full text-sm ${
+                            darkMode
+                              ? "bg-gray-700 text-pink-300"
+                              : "bg-pink-100 text-pink-700"
+                          }`}
+                        >
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <div
+                      className={`mb-8 ${
+                        darkMode ? "text-gray-300" : "text-gray-600"
+                      }`}
+                    >
+                      <h3 className="text-xl font-semibold mb-3">Project Overview</h3>
+                      <p className="mb-4">{selectedPortfolio.description}</p>
+                      <h3 className="text-xl font-semibold mb-3">Key Contributions</h3>
+                      <ul className="space-y-2 list-disc pl-5">
+                        {selectedPortfolio.details.map((detail, index) => (
+                          <li key={index}>{detail}</li>
+                        ))}
+                      </ul>
+                    </div>
+                    <motion.button
+                      whileHover={{ y: -2 }}
+                      whileTap={{ scale: 0.98 }}
+                      onClick={closePortfolioDetail}
+                      className={`px-6 py-3 rounded-full font-medium ${
+                        darkMode
+                          ? "bg-pink-600 hover:bg-pink-700"
+                          : "bg-pink-500 hover:bg-pink-600"
+                      } text-white shadow-lg`}
+                    >
+                      Close Project
+                    </motion.button>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
-  )
+  );
 }
